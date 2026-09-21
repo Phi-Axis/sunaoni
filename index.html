@@ -257,7 +257,7 @@
   }
   .ln{ white-space:pre-wrap; overflow-wrap:break-word; }
   .ln.blank{ height:1em; }
-  .w{ display:inline-block; white-space:nowrap; max-width:100%; }
+  .w{ display:inline-block; max-width:100%; }
   .ch{
     display:inline-block;
     transition:opacity .55s ease, transform .75s ease-in;
@@ -574,6 +574,39 @@
   }
 
   const eligible = /[\p{L}\p{N}]/u;   // 文字・数字だけが消える（空白・句読点・改行は残す）
+  const HANGUL = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/;
+  const OPENERS = new Set(['「','『','（','(','［','[','【','〈','《','“','‘','"',"'"]);
+
+  // 日本語など（スペースで区切られない文章）：1文字ごとに折り返せる。
+  // 句読点・閉じ括弧は直前の文字に付け、行頭に来ないようにする。英数字の連続は1語として扱う。
+  function appendJapanese(ln, part){
+    const pieces = part.match(/[A-Za-z0-9\u00C0-\u024F]+|[\s\S]/gu) || [];
+    let prefix = '';
+    let last = null;
+    pieces.forEach(p => {
+      if (eligible.test(p.charAt(0))) {
+        const w = document.createElement('span');
+        w.className = 'w';
+        if (prefix) { w.appendChild(document.createTextNode(prefix)); prefix = ''; }
+        Array.from(p).forEach(c => {
+          const s = document.createElement('span');
+          s.className = 'ch';
+          s.textContent = c;
+          w.appendChild(s);
+          chars.push(s);
+        });
+        ln.appendChild(w);
+        last = w;
+      } else if (OPENERS.has(p)) {
+        prefix += p;
+      } else if (last) {
+        last.appendChild(document.createTextNode(p));
+      } else {
+        ln.appendChild(document.createTextNode(p));
+      }
+    });
+    if (prefix) ln.appendChild(document.createTextNode(prefix));
+  }
 
   function shuffle(a){
     for (let i = a.length - 1; i > 0; i--) {
@@ -596,20 +629,25 @@
         line.split(/(\s+)/).forEach(part => {
           if (part === '') return;
           if (/^\s+$/.test(part)) { ln.appendChild(document.createTextNode(part)); return; }
-          const w = document.createElement('span');
-          w.className = 'w';
-          Array.from(part).forEach(c => {          // 1音節ブロック単位（字母には分解しない）
-            if (eligible.test(c)) {
-              const s = document.createElement('span');
-              s.className = 'ch';
-              s.textContent = c;
-              w.appendChild(s);
-              chars.push(s);
-            } else {
-              w.appendChild(document.createTextNode(c));
-            }
-          });
-          ln.appendChild(w);
+          if (HANGUL.test(part)) {
+            // 韓国語：スペース区切りの単語は途中で折り返さない
+            const w = document.createElement('span');
+            w.className = 'w';
+            Array.from(part).forEach(c => {          // 1音節ブロック単位（字母には分解しない）
+              if (eligible.test(c)) {
+                const s = document.createElement('span');
+                s.className = 'ch';
+                s.textContent = c;
+                w.appendChild(s);
+                chars.push(s);
+              } else {
+                w.appendChild(document.createTextNode(c));
+              }
+            });
+            ln.appendChild(w);
+          } else {
+            appendJapanese(ln, part);
+          }
         });
       }
       linesEl.appendChild(ln);
